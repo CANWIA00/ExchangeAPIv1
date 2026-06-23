@@ -1,6 +1,23 @@
 version: '3.8'
 
 services:
+  # ===== PostgreSQL =====
+  postgres:
+    image: postgres:15-alpine
+    container_name: exchange-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: exchange_db
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - exchange-network
+
+  # ===== Redis Master =====
   redis-master:
     image: redis:7.2-alpine
     container_name: exchange-redis-master
@@ -14,6 +31,7 @@ services:
     networks:
       - exchange-network
 
+  # ===== Redis Replica =====
   redis-replica:
     image: redis:7.2-alpine
     container_name: exchange-redis-replica
@@ -28,6 +46,7 @@ services:
     networks:
       - exchange-network
 
+  # ===== Redis Sentinel =====
   redis-sentinel:
     image: redis:7.2-alpine
     container_name: exchange-redis-sentinel
