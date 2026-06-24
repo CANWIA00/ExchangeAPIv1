@@ -1,6 +1,7 @@
 package com.maf.exchangeapiv1.service;
 
 import com.maf.exchangeapiv1.cache.OrderBookCache;
+import com.maf.exchangeapiv1.dto.FinalPriceDto;
 import com.maf.exchangeapiv1.scheduler.FeeManagementScheduler;
 import org.springframework.stereotype.Service;
 
@@ -22,45 +23,90 @@ public class SpreadEngineService {
     }
 
     private BigDecimal calculateMultiplier(BigDecimal exchangeFee, BigDecimal slippage, boolean isBuy) {
-        if (isBuy) { // multiplier = (1 + fee) × (1 + kar) × (1 + slippage)
+        if (isBuy) {
             return BigDecimal.ONE.add(exchangeFee)
                     .multiply(BigDecimal.ONE.add(COMPANY_PROFIT_MARGIN))
                     .multiply(BigDecimal.ONE.add(slippage));
-        } else { // multiplier = (1 - fee) × (1 - kar) × (1 - slippage)
+        } else {
             return BigDecimal.ONE.subtract(exchangeFee)
                     .multiply(BigDecimal.ONE.subtract(COMPANY_PROFIT_MARGIN))
                     .multiply(BigDecimal.ONE.subtract(slippage));
         }
     }
 
-    public BigDecimal calculateBaseFinalPrice(BigDecimal amount, String pair, String side) {
+
+     // Base Buy/Sell
+    public FinalPriceDto calculateBaseFinalPrice(BigDecimal amount, String pair, String side) {
         boolean isBuy = side.equalsIgnoreCase("buy");
+        String operation = isBuy ? "BUY" : "SELL";
+
+        BigDecimal spotPrice = isBuy ? orderBookCache.getBestAsk(pair) : orderBookCache.getBestBid(pair);
         BigDecimal avgPrice = orderBookCache.getAveragePriceWithVolume(pair, amount, isBuy);
-        // Slippage already existed in averagePrice
-        BigDecimal multiplier = calculateMultiplier(scheduler.getFeeRate(), BigDecimal.ZERO, isBuy);
-        System.out.println("**************************************** Calculate Base FinalPrice **************************************");
-        System.out.println("Desired amount of coin: "+ amount + " " + pair);
-        System.out.println("AvgPrice without any fee: " + avgPrice);
-        System.out.println("multiplier(Fees): " + multiplier);
-        System.out.println("New Price: " + avgPrice.multiply(multiplier).multiply(amount).setScale(2, RoundingMode.HALF_UP));
-        return avgPrice.multiply(multiplier).multiply(amount).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal exchangeFeeRate = scheduler.getFeeRate();
+        BigDecimal exchangeFee = spotPrice.multiply(exchangeFeeRate);
+        BigDecimal companyFee = spotPrice.multiply(COMPANY_PROFIT_MARGIN);
+        BigDecimal slippageRate = BigDecimal.ZERO;
+        BigDecimal slippageAmount = BigDecimal.ZERO;
+        BigDecimal multiplier = calculateMultiplier(exchangeFeeRate, BigDecimal.ZERO, isBuy);
+        BigDecimal unitPrice = avgPrice.multiply(multiplier);
+        BigDecimal totalCost = unitPrice.multiply(amount);
+
+        return FinalPriceDto.builder()
+                .inputAmount(amount)
+                .outputAmount(amount)
+                .spotPrice(spotPrice)
+                .averagePrice(avgPrice)
+                .exchangeFee(exchangeFee)
+                .exchangeFeeRate(exchangeFeeRate)
+                .companyFee(companyFee)
+                .companyFeeRate(COMPANY_PROFIT_MARGIN)
+                .slippageAmount(slippageAmount)
+                .slippageRate(slippageRate)
+                .unitPrice(unitPrice)
+                .totalCost(totalCost)
+                .multiplier(multiplier)
+                .side(operation)
+                .pair(pair)
+                .build();
     }
 
-    public BigDecimal calculateQuoteFinalPrice(BigDecimal targetAmount, String pair, String side) {
+
+     // Quote Buy/Sell
+    public FinalPriceDto calculateQuoteFinalPrice(BigDecimal targetAmount, String pair, String side) {
         boolean isBuy = side.equalsIgnoreCase("buy");
-        BigDecimal bestPrice = isBuy ? orderBookCache.getBestAsk(pair) : orderBookCache.getBestBid(pair);
+        String operation = isBuy ? "BUY" : "SELL";
 
-        // EstimatedAmount = targetAmountPrice/bestPrice
-        BigDecimal estimatedAmount = targetAmount.divide(bestPrice, 8, RoundingMode.HALF_UP);
-        // Slippage rate
-        BigDecimal totalSlippage = slippageService.calculateSlippage(pair, estimatedAmount, isBuy);
-        BigDecimal multiplier = calculateMultiplier(scheduler.getFeeRate(), totalSlippage, isBuy);
+        BigDecimal spotPrice = isBuy ? orderBookCache.getBestAsk(pair) : orderBookCache.getBestBid(pair);
+        if (spotPrice == null || spotPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("No price available for " + pair);
+        }
+        BigDecimal estimatedAmount = targetAmount.divide(spotPrice, 8, RoundingMode.HALF_UP);
+        BigDecimal slippageRate = slippageService.calculateSlippage(pair, estimatedAmount, isBuy);
+        BigDecimal slippageAmount = spotPrice.multiply(slippageRate);
+        BigDecimal exchangeFeeRate = scheduler.getFeeRate();
+        BigDecimal exchangeFee = spotPrice.multiply(exchangeFeeRate);
+        BigDecimal companyFee = spotPrice.multiply(COMPANY_PROFIT_MARGIN);
+        BigDecimal multiplier = calculateMultiplier(exchangeFeeRate, slippageRate, isBuy);
+        BigDecimal unitPrice = spotPrice.multiply(multiplier);
+        BigDecimal outputAmount = targetAmount.divide(unitPrice, 8, RoundingMode.HALF_DOWN);
+        BigDecimal totalCost = targetAmount;
 
-        System.out.println("**************************************** Calculate Quote FinalPrice **************************************");
-        System.out.println("Desired amount of coin: " + targetAmount + " Dollar");
-        System.out.println("TotalSlippage (fee): " + totalSlippage);
-        System.out.println("multiplier (fees): " + multiplier);
-        System.out.println("New Price: " + targetAmount.divide(bestPrice.multiply(multiplier), 8, RoundingMode.HALF_DOWN));
-        return targetAmount.divide(bestPrice.multiply(multiplier), 8, RoundingMode.HALF_DOWN);
+        return FinalPriceDto.builder()
+                .inputAmount(targetAmount)
+                .outputAmount(outputAmount)
+                .spotPrice(spotPrice)
+                .averagePrice(unitPrice)
+                .exchangeFee(exchangeFee)
+                .exchangeFeeRate(exchangeFeeRate)
+                .companyFee(companyFee)
+                .companyFeeRate(COMPANY_PROFIT_MARGIN)
+                .slippageAmount(slippageAmount)
+                .slippageRate(slippageRate)
+                .unitPrice(unitPrice)
+                .totalCost(totalCost)
+                .multiplier(multiplier)
+                .side(operation)
+                .pair(pair)
+                .build();
     }
 }

@@ -1,7 +1,9 @@
 package com.maf.exchangeapiv1.controller;
 
+import com.maf.exchangeapiv1.dto.FinalPriceDto;
 import com.maf.exchangeapiv1.scheduler.FeeManagementScheduler;
 import com.maf.exchangeapiv1.service.SpreadEngineService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -31,12 +33,12 @@ public class FeeManagementController {
     }
 
     @GetMapping("/calculate")
-    public BigDecimal testCalculationBase(@RequestParam BigDecimal amount, @RequestParam String pair, @RequestParam String side) {
-        return spreadEngine.calculateBaseFinalPrice(amount, pair, side);
+    public ResponseEntity<FinalPriceDto> testCalculationBase(@RequestParam BigDecimal amount, @RequestParam String pair, @RequestParam String side) {
+        return ResponseEntity.ok( spreadEngine.calculateBaseFinalPrice(amount, pair, side));
     }
 
     @GetMapping("/calculate/quote")
-    public BigDecimal testCalculationQuote(@RequestParam BigDecimal targetAmount, @RequestParam String pair, @RequestParam String side) {
-        return spreadEngine.calculateQuoteFinalPrice(targetAmount, pair, side);
+    public ResponseEntity<FinalPriceDto> testCalculationQuote(@RequestParam BigDecimal targetAmount, @RequestParam String pair, @RequestParam String side) {
+        return ResponseEntity.ok(spreadEngine.calculateQuoteFinalPrice(targetAmount, pair, side));
     }
 }

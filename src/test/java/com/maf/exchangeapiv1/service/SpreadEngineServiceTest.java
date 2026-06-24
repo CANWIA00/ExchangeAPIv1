@@ -2,6 +2,7 @@ package com.maf.exchangeapiv1.service;
 
 
 import com.maf.exchangeapiv1.cache.OrderBookCache;
+import com.maf.exchangeapiv1.dto.FinalPriceDto;
 import com.maf.exchangeapiv1.scheduler.FeeManagementScheduler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -56,14 +57,14 @@ class SpreadEngineServiceTest {
         when(orderBookCache.getAveragePriceWithVolume(eq(PAIR), eq(AMOUNT), eq(true)))
                 .thenReturn(avgPrice);
 
-        BigDecimal result = spreadEngineService.calculateBaseFinalPrice(AMOUNT, PAIR, "buy");
+        FinalPriceDto result = spreadEngineService.calculateBaseFinalPrice(AMOUNT, PAIR, "buy");
 
         BigDecimal expected = avgPrice
                 .multiply(BigDecimal.ONE.add(feeRate))
                 .multiply(BigDecimal.ONE.add(profitMargin))
                 .multiply(AMOUNT)
                 .setScale(2, RoundingMode.HALF_UP);
-        assertThat(result).isEqualTo(expected);
+        assertThat(result.getTotalCost()).isEqualTo(expected);
     }
 
     @Test
@@ -77,7 +78,7 @@ class SpreadEngineServiceTest {
         when(orderBookCache.getAveragePriceWithVolume(eq(PAIR), eq(AMOUNT), eq(false)))
                 .thenReturn(avgPrice);
 
-        BigDecimal result = spreadEngineService.calculateBaseFinalPrice(AMOUNT, PAIR, "sell");
+        FinalPriceDto result = spreadEngineService.calculateBaseFinalPrice(AMOUNT, PAIR, "sell");
 
         BigDecimal expected = avgPrice
                 .multiply(BigDecimal.ONE.subtract(feeRate))
@@ -85,7 +86,7 @@ class SpreadEngineServiceTest {
                 .multiply(AMOUNT)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        assertThat(result).isEqualTo(expected);
+        assertThat(result.getTotalCost()).isEqualTo(expected);
     }
 
     @Test
@@ -102,7 +103,7 @@ class SpreadEngineServiceTest {
         when(slippageService.calculateSlippage(eq(PAIR), any(BigDecimal.class), eq(true)))
                 .thenReturn(slippage);
 
-        BigDecimal result = spreadEngineService.calculateQuoteFinalPrice(targetAmount, PAIR, "buy");
+        FinalPriceDto result = spreadEngineService.calculateQuoteFinalPrice(targetAmount, PAIR, "buy");
 
         // multiplier = (1+fee) × (1+kar) × (1+slippage)
         BigDecimal multiplier = BigDecimal.ONE.add(feeRate)
@@ -110,7 +111,7 @@ class SpreadEngineServiceTest {
                 .multiply(BigDecimal.ONE.add(slippage));
 
         BigDecimal expected = targetAmount.divide(bestPrice.multiply(multiplier), 8, RoundingMode.HALF_DOWN);
-        assertThat(result).isEqualTo(expected);
+        assertThat(result.getTotalCost()).isEqualTo(expected);
     }
 
     @Test
@@ -127,13 +128,13 @@ class SpreadEngineServiceTest {
         when(slippageService.calculateSlippage(eq(PAIR), any(BigDecimal.class), eq(false)))
                 .thenReturn(slippage);
 
-        BigDecimal result = spreadEngineService.calculateQuoteFinalPrice(targetAmount, PAIR, "sell");
+        FinalPriceDto result = spreadEngineService.calculateQuoteFinalPrice(targetAmount, PAIR, "sell");
 
         BigDecimal multiplier = BigDecimal.ONE.subtract(feeRate)
                 .multiply(BigDecimal.ONE.subtract(profitMargin))
                 .multiply(BigDecimal.ONE.subtract(slippage));
 
         BigDecimal expected = targetAmount.divide(bestPrice.multiply(multiplier), 8, RoundingMode.HALF_UP);
-        assertThat(result).isEqualTo(expected);
+        assertThat(result.getTotalCost()).isEqualTo(expected);
     }
 }

@@ -22,6 +22,8 @@ public class AccountService {
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
     private final AccountConverter accountConverter;
+    private final String COMPANY_USER_ID = "company-user-id";
+    private final String COINBASE_USER_ID = "coinbase-system-id";
 
 
     public List<AccountDto> getUserAccounts(String userId) {
@@ -29,8 +31,7 @@ public class AccountService {
     }
 
     public AccountDto getAccount(String userId, String asset) {
-         Account account = accountRepository.findByUserIdAndAsset(userId, asset)
-                .orElseThrow(() -> new RuntimeException("Account not found!"));
+         Account account = getAccountById(userId,asset);
          return accountConverter.toDTO(account);
     }
 
@@ -81,5 +82,60 @@ public class AccountService {
                 oldBalance, savedAccount.getBalance());
         return accountConverter.toDTO(savedAccount);
     }
+
+    @Transactional
+    public Account creditCompanyAccount(String asset, BigDecimal amount, String referenceId) {
+        Account companyAccount = accountRepository.findByUserIdAndAsset(COMPANY_USER_ID, asset)
+                .orElseThrow(() -> new RuntimeException("Company " + asset + " account not found!"));
+        companyAccount.setBalance(companyAccount.getBalance().add(amount));
+        companyAccount.setAvailableBalance(companyAccount.getBalance().subtract(companyAccount.getLockedBalance()));
+        log.info("[ACCOUNT] Company credited: +{} {} (Ref: {})", amount, asset, referenceId);
+        return accountRepository.save(companyAccount);
+    }
+
+    @Transactional
+    public Account creditCoinbaseAccount(String asset, BigDecimal amount, String referenceId) {
+        Account coinbaseAccount = accountRepository.findByUserIdAndAsset(COINBASE_USER_ID, asset)
+                .orElseThrow(() -> new RuntimeException("Coinbase " + asset + " account not found!"));
+        coinbaseAccount.setBalance(coinbaseAccount.getBalance().add(amount));
+        coinbaseAccount.setAvailableBalance(coinbaseAccount.getBalance().subtract(coinbaseAccount.getLockedBalance()));
+        log.info("[ACCOUNT] Coinbase credited: +{} {} (Ref: {})", amount, asset, referenceId);
+        return accountRepository.save(coinbaseAccount);
+    }
+
+    public Account getAccountById(String userId, String asset) {
+        return accountRepository.findByUserIdAndAsset(userId, asset)
+                .orElseThrow(() -> new RuntimeException(asset + " account not found for user " + userId));
+    }
+
+    public Account updateAccount(Account account) {
+        log.info("[ACCOUNT] Updating account: {} - {}, Balance: {}",
+                account.getUser().getId(), account.getAsset(), account.getBalance());
+        return accountRepository.save(account);
+    }
+
+    @Transactional
+    public Account debitAccount(String userId, String asset, BigDecimal amount) {
+        Account account = getAccountById(userId, asset);
+        if (account.getBalance().compareTo(amount) < 0) {
+            throw new RuntimeException("Insufficient balance in " + asset + " account!");
+        }
+        account.setBalance(account.getBalance().subtract(amount));
+        account.setAvailableBalance(account.getBalance().subtract(account.getLockedBalance()));
+        return accountRepository.save(account);
+    }
+
+    @Transactional
+    public Account creditAccount(String userId, String asset, BigDecimal amount) {
+        Account account = getAccountById(userId, asset);
+        account.setBalance(account.getBalance().add(amount));
+        account.setAvailableBalance(account.getBalance().subtract(account.getLockedBalance()));
+        return accountRepository.save(account);
+    }
+
+
+    /// /////////////////////////////////////////////////////
+
+
 
 }

@@ -31,15 +31,20 @@ public class Transaction {
     private String asset;
 
     @Column(nullable = false)
-    private String type;  // "DEPOSIT", "WITHDRAW", "TRADE", "CONVERSION", "FEE", "SYNC", "LOCK", "UNLOCK"
+    private String type;  // DEPOSIT, WITHDRAW, BUY, SELL, CONVERSION_OUT, CONVERSION_IN, FEE
 
     private BigDecimal amount;
 
-    private BigDecimal balanceBefore;
+    private BigDecimal unitPrice;
 
+    private BigDecimal totalCost;
+
+    private BigDecimal balanceBefore;
     private BigDecimal balanceAfter;
 
-    private String referenceId;  // Order ID, Transaction ID
+    private String referenceId;  // Order ID, Transaction ID, Conversion ID
+
+    private String status;  // PENDING, COMPLETED, FAILED
 
     private String description;
 
@@ -48,5 +53,8 @@ public class Transaction {
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        if (status == null) {
+            status = "COMPLETED";
+        }
     }
 }
