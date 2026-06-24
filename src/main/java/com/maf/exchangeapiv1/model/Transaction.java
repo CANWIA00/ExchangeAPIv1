@@ -37,10 +37,10 @@ public class Transaction {
 
     private BigDecimal unitPrice;
 
-    private BigDecimal totalCost;
-
     private BigDecimal balanceBefore;
     private BigDecimal balanceAfter;
+
+    private BigDecimal totalFee;
 
     private String referenceId;  // Order ID, Transaction ID, Conversion ID
 

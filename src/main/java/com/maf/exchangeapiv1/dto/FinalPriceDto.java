@@ -40,17 +40,6 @@ public class FinalPriceDto {
     public BigDecimal getTotalFees() {
         BigDecimal exchange = exchangeFee != null ? exchangeFee : BigDecimal.ZERO;
         BigDecimal company = companyFee != null ? companyFee : BigDecimal.ZERO;
-        BigDecimal slippage = slippageAmount != null ? slippageAmount : BigDecimal.ZERO;
-        return exchange.add(company).add(slippage);
-    }
-
-    public BigDecimal getNetAmount() {
-        // BUY: totalCost - totalFees = costumer net income
-        return totalCost != null ? totalCost.subtract(getTotalFees()) : BigDecimal.ZERO;
-    }
-
-    public BigDecimal getGrossAmount() {
-        // SELL: totalCost + totalFees = Customer net outcome
-        return totalCost != null ? totalCost.add(getTotalFees()) : BigDecimal.ZERO;
+        return exchange.add(company);
     }
 }

@@ -7,9 +7,7 @@ import com.maf.exchangeapiv1.model.Account;
 import com.maf.exchangeapiv1.model.Conversion;
 import com.maf.exchangeapiv1.model.ConversionStatus;
 import com.maf.exchangeapiv1.model.Transaction;
-import com.maf.exchangeapiv1.repository.AccountRepository;
 import com.maf.exchangeapiv1.repository.ConversionRepository;
-import com.maf.exchangeapiv1.repository.TransactionRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,8 +23,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ConversionService {
 
-    private static final long OFFER_TTL_SECONDS = 30;
-    private static final BigDecimal COMPANY_FEE_RATE = new BigDecimal("0.002");
+    private static final String COMPANY_USER_ID = "company-user-id";
+    private static final String COINBASE_USER_ID = "coinbase-system-id";
 
     private final ConversionRepository conversionRepository;
     private final AccountService accountService;
@@ -34,27 +32,19 @@ public class ConversionService {
     private final SpreadEngineService spreadEngineService;
     private final ConversionConverter conversionConverter;
 
-    // ==================== READ OPERATIONS ====================
-
-    public List<ConversionDto> getUserConversions(String userId) {
-        return conversionConverter.toDTOList(
-                conversionRepository.findByUserIdOrderByCreatedAtDesc(userId)
-        );
-    }
-
-    public ConversionDto getConversion(String conversionId) {
+    public ConversionDto getConversionById(String conversionId, String userId) {
         Conversion conversion = conversionRepository.findById(conversionId)
-                .orElseThrow(() -> new RuntimeException("Conversion not found!"));
+                .orElseThrow(() -> new RuntimeException("Conversion not found: " + conversionId));
+        if (!conversion.getUserId().equals(userId)) {
+            throw new RuntimeException("Unauthorized access to conversion: " + conversionId);
+        }
         return conversionConverter.toDTO(conversion);
     }
 
     // ==================== OFFER OPERATIONS ====================
 
     @Transactional
-    public ConversionDto createConversionOffer(String userId, String fromAsset, String toAsset,
-                                               BigDecimal amount, String description,
-                                               String side, String conversionType) {
-
+    public ConversionDto createConversionOffer(String userId, String fromAsset, String toAsset, BigDecimal amount, String description, String side, String conversionType) {
         String pair = toAsset + "-" + fromAsset;
         FinalPriceDto price;
         if ("BASE".equalsIgnoreCase(conversionType)) {
@@ -66,23 +56,17 @@ public class ConversionService {
         if (price == null || price.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
             throw new RuntimeException("Could not fetch live rate for " + pair);
         }
-
-
         Account fromAccount = accountService.getAccountById(userId, fromAsset);
         Account toAccount = accountService.getAccountById(userId, toAsset);
-
-
         BigDecimal exchangeFee = price.getExchangeFee();
         BigDecimal companyFee = price.getCompanyFee();
         BigDecimal slippageFee = price.getSlippageAmount();
         BigDecimal totalFees = price.getTotalFees();
-
-
         Conversion conversion = Conversion.builder()
                 .userId(userId)
                 .fromAsset(fromAsset)
                 .toAsset(toAsset)
-                .fromAmount(amount)
+                .fromAmount(price.getTotalCost())
                 .toAmount(price.getOutputAmount())
                 .rate(price.getUnitPrice())
                 .fromAccountId(fromAccount.getId())
@@ -94,12 +78,8 @@ public class ConversionService {
                 .status(ConversionStatus.PENDING)
                 .description(description != null ? description : "Conversion offer")
                 .build();
-
         Conversion savedConversion = conversionRepository.save(conversion);
-
-        log.info("[CONVERSION] Offer created: {} {} -> {} {} (Rate: {}, Fees: {})",
-                amount, fromAsset, price.getOutputAmount(), toAsset, price.getUnitPrice(), totalFees);
-
+        log.info("[CONVERSION] Offer created: {} {} -> {} {} (Rate: {}, Fees: {})", amount, fromAsset, price.getOutputAmount(), toAsset, price.getUnitPrice(), totalFees);
         return conversionConverter.toDTO(savedConversion);
     }
 
@@ -107,70 +87,79 @@ public class ConversionService {
 
     @Transactional
     public ConversionDto acceptConversionOffer(String conversionId, String userId) {
-        Conversion conversion = conversionRepository.findById(conversionId)
-                .orElseThrow(() -> new RuntimeException("Conversion not found!"));
+        Conversion conversion = validateAndGetConversion(conversionId, userId);
+        validateConversionStatus(conversion);
+        validateConversionNotExpired(conversion);
 
-        if (!conversion.getUserId().equals(userId)) {
-            throw new RuntimeException("Unauthorized access!");
-        }
-
-        if (conversion.getStatus() != ConversionStatus.PENDING) {
-            throw new RuntimeException("Conversion is already " + conversion.getStatus());
-        }
-
-        if (conversion.getExpiresAt() != null && conversion.getExpiresAt().isBefore(LocalDateTime.now())) {
-            conversion.setStatus(ConversionStatus.EXPIRED);
-            conversionRepository.save(conversion);
-            throw new RuntimeException("Conversion offer has expired! Please create a new one.");
-        }
-
-        return completeConversion(conversionId);
+        return completeConversion(conversion);
     }
 
     @Transactional
-    public ConversionDto completeConversion(String conversionId) {
-        Conversion conversion = conversionRepository.findById(conversionId)
-                .orElseThrow(() -> new RuntimeException("Conversion not found!"));
+    public ConversionDto completeConversion(Conversion conversion) {
+        BigDecimal fromAccountBalanceBefore = accountService.getBalance(conversion.getUserId(), conversion.getFromAsset());
+        BigDecimal toAccountBalanceBefore = accountService.getBalance(conversion.getUserId(), conversion.getToAsset());
 
-        if (conversion.getStatus() != ConversionStatus.PENDING) {
-            throw new RuntimeException("Conversion is already " + conversion.getStatus());
-        }
-        //- Costumer
         Account fromAccount = accountService.debitAccount(
                 conversion.getUserId(),
                 conversion.getFromAsset(),
                 conversion.getFromAmount()
         );
 
-        //+ Costumer
         Account toAccount = accountService.creditAccount(
                 conversion.getUserId(),
                 conversion.getToAsset(),
                 conversion.getToAmount()
         );
-        // + Company
+
+        // Company Exchange Process
         BigDecimal companyFee = conversion.getCompanyFee();
         if (companyFee != null && companyFee.compareTo(BigDecimal.ZERO) > 0) {
-            accountService.creditCompanyAccount(
+            Account companyAccount = accountService.creditCompanyAccount(
                     conversion.getFromAsset(),
                     companyFee,
-                    conversionId
+                    conversion.getId()
             );
-            log.info("[CONVERSION] Company fee credited: {} {} (Ref: {})", companyFee, conversion.getFromAsset(), conversionId);
+            Transaction companyTx = transactionService.createTransaction(
+                    COMPANY_USER_ID,
+                    companyAccount.getId(),
+                    conversion.getFromAsset(),
+                    "COMPANY_FEE_IN",
+                    companyFee,
+                    conversion.getRate(),
+                    conversion.getId(),
+                    "Company fee from conversion: " + conversion.getId(),
+                    companyAccount.getBalance().subtract(companyFee),
+                    companyAccount.getBalance()
+                    ,null
+            );
+            log.info("[CONVERSION] Company fee credited: {} {} (Ref: {}, Tx: {})", companyFee, conversion.getFromAsset(), conversion.getId(), companyTx.getId());
         }
 
-        // - Company
+        //Coinbase Exchange Process
         BigDecimal exchangeFee = conversion.getExchangeFee();
         if (exchangeFee != null && exchangeFee.compareTo(BigDecimal.ZERO) > 0) {
-            accountService.creditCoinbaseAccount(
+            Account coinbaseAccount = accountService.creditCoinbaseAccount(
                     conversion.getFromAsset(),
                     exchangeFee,
-                    conversionId
+                    conversion.getId()
             );
-            log.info("[CONVERSION] Exchange fee credited: {} {} (Ref: {})", exchangeFee, conversion.getFromAsset(), conversionId);
+            Transaction coinbaseTx = transactionService.createTransaction(
+                    COINBASE_USER_ID,
+                    coinbaseAccount.getId(),
+                    conversion.getFromAsset(),
+                    "EXCHANGE_FEE_IN",
+                    exchangeFee,
+                    conversion.getRate(),
+                    conversion.getId(),
+                    "Exchange fee from conversion: " + conversion.getId(),
+                    coinbaseAccount.getBalance().subtract(exchangeFee),
+                    coinbaseAccount.getBalance(),
+                    null
+            );
+            log.info("[CONVERSION] Exchange fee credited: {} {} (Ref: {}, Tx: {})", exchangeFee, conversion.getFromAsset(), conversion.getId(), coinbaseTx.getId());
         }
 
-
+        //User Transactions
         Transaction fromTx = transactionService.createTransaction(
                 conversion.getUserId(),
                 fromAccount.getId(),
@@ -178,11 +167,12 @@ public class ConversionService {
                 "CONVERSION_OUT",
                 conversion.getFromAmount(),
                 conversion.getRate(),
-                conversionId,
-                "Conversion out: " + conversion.getFromAmount() + " " + conversion.getFromAsset()
+                conversion.getId(),
+                "Conversion out: " + conversion.getFromAmount() + " " + conversion.getFromAsset(),
+                fromAccountBalanceBefore,
+                fromAccount.getBalance(),
+                conversion.getTotalFees()
         );
-
-
         Transaction toTx = transactionService.createTransaction(
                 conversion.getUserId(),
                 toAccount.getId(),
@@ -190,26 +180,12 @@ public class ConversionService {
                 "CONVERSION_IN",
                 conversion.getToAmount(),
                 conversion.getRate(),
-                conversionId,
-                "Conversion in: " + conversion.getToAmount() + " " + conversion.getToAsset()
+                conversion.getId(),
+                "Conversion in: " + conversion.getToAmount() + " " + conversion.getToAsset(),
+                toAccountBalanceBefore,
+                toAccount.getBalance(),
+                conversion.getTotalFees()
         );
-
-        // 6. Kullanıcı fee transaction kaydı (bilgi amaçlı)
-        BigDecimal totalFees = conversion.getTotalFees();
-        if (totalFees != null && totalFees.compareTo(BigDecimal.ZERO) > 0) {
-            Transaction feeTx = transactionService.createTransaction(
-                    conversion.getUserId(),
-                    fromAccount.getId(),
-                    conversion.getFromAsset(),
-                    "FEE",
-                    totalFees,
-                    conversion.getRate(),
-                    conversionId,
-                    "Total fees: " + totalFees + " " + conversion.getFromAsset()
-            );
-        }
-
-        // 7. Conversion'ı güncelle
         conversion.setStatus(ConversionStatus.COMPLETED);
         conversion.setCompletedAt(LocalDateTime.now());
         conversion.setTransactionId(fromTx.getId());
@@ -227,16 +203,8 @@ public class ConversionService {
 
     @Transactional
     public ConversionDto cancelConversion(String conversionId, String userId) {
-        Conversion conversion = conversionRepository.findById(conversionId)
-                .orElseThrow(() -> new RuntimeException("Conversion not found!"));
-
-        if (!conversion.getUserId().equals(userId)) {
-            throw new RuntimeException("Unauthorized access!");
-        }
-
-        if (conversion.getStatus() != ConversionStatus.PENDING) {
-            throw new RuntimeException("Conversion is already " + conversion.getStatus());
-        }
+        Conversion conversion = validateAndGetConversion(conversionId, userId);
+        validateConversionStatus(conversion);
 
         conversion.setStatus(ConversionStatus.CANCELLED);
         conversionRepository.save(conversion);
@@ -247,7 +215,7 @@ public class ConversionService {
 
     // ==================== SCHEDULED TASKS ====================
 
-    @Scheduled(fixedDelay = 60000)
+    @Scheduled(fixedDelay = 30000)
     @Transactional
     public void expirePendingConversions() {
         List<Conversion> pendingConversions = conversionRepository.findByStatus(ConversionStatus.PENDING);
@@ -259,6 +227,33 @@ public class ConversionService {
                 conversionRepository.save(conversion);
                 log.info("[CONVERSION] Expired: {}", conversion.getId());
             }
+        }
+    }
+
+
+    // ==================== VALIDATION ====================
+
+    private Conversion validateAndGetConversion(String conversionId, String userId) {
+        Conversion conversion = conversionRepository.findById(conversionId).orElseThrow(() -> new RuntimeException("Conversion not found: " + conversionId));
+
+        if (!conversion.getUserId().equals(userId)) {
+            throw new RuntimeException("Unauthorized access to conversion: " + conversionId);
+        }
+
+        return conversion;
+    }
+
+    private void validateConversionStatus(Conversion conversion) {
+        if (conversion.getStatus() != ConversionStatus.PENDING) {
+            throw new RuntimeException("Conversion is already " + conversion.getStatus());
+        }
+    }
+
+    private void validateConversionNotExpired(Conversion conversion) {
+        if (conversion.getExpiresAt() != null && conversion.getExpiresAt().isBefore(LocalDateTime.now())) {
+            conversion.setStatus(ConversionStatus.EXPIRED);
+            conversionRepository.save(conversion);
+            throw new RuntimeException("Conversion offer has expired: " + conversion.getId());
         }
     }
 }

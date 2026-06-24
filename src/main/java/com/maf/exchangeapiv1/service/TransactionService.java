@@ -18,9 +18,9 @@ public class TransactionService {
     @Transactional
     public Transaction createTransaction(String userId, String accountId, String asset,
                                          String type, BigDecimal amount, BigDecimal price,
-                                         String referenceId, String description) {
+                                         String referenceId, String description,
+                                         BigDecimal balanceBefore, BigDecimal balanceAfter, BigDecimal totalFee) {
 
-        BigDecimal total = amount.multiply(price != null ? price : BigDecimal.ONE);
 
         Transaction transaction = Transaction.builder()
                 .userId(userId)
@@ -29,14 +29,17 @@ public class TransactionService {
                 .type(type)
                 .amount(amount)
                 .unitPrice(price)
-                .totalCost(total)
+                .balanceBefore(balanceBefore)
+                .balanceAfter(balanceAfter)
+                .totalFee(totalFee)
                 .referenceId(referenceId)
                 .status("COMPLETED")
                 .description(description)
                 .build();
 
         Transaction saved = transactionRepository.save(transaction);
-        log.info("[TRANSACTION] {} - {}: {} {} (Ref: {})", type, userId, amount, asset, referenceId);
+        log.info("[TRANSACTION] {} - {}: {} {} (Before: {}, After: {}, Ref: {})",
+                type, userId, amount, asset, balanceBefore, balanceAfter, referenceId);
         return saved;
     }
 }

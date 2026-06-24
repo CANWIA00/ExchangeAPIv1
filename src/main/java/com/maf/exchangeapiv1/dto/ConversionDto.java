@@ -1,7 +1,6 @@
 package com.maf.exchangeapiv1.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.maf.exchangeapiv1.model.ConversionStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

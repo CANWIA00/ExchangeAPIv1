@@ -45,8 +45,8 @@ public class SpreadEngineService {
         BigDecimal exchangeFeeRate = scheduler.getFeeRate();
         BigDecimal exchangeFee = spotPrice.multiply(exchangeFeeRate);
         BigDecimal companyFee = spotPrice.multiply(COMPANY_PROFIT_MARGIN);
-        BigDecimal slippageRate = BigDecimal.ZERO;
-        BigDecimal slippageAmount = BigDecimal.ZERO;
+        BigDecimal slippageRate = slippageService.calculateSlippage(pair, amount, isBuy);
+        BigDecimal slippageAmount = spotPrice.multiply(slippageRate);
         BigDecimal multiplier = calculateMultiplier(exchangeFeeRate, BigDecimal.ZERO, isBuy);
         BigDecimal unitPrice = avgPrice.multiply(multiplier);
         BigDecimal totalCost = unitPrice.multiply(amount);

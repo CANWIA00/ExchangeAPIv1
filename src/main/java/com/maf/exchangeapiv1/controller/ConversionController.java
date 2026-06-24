@@ -8,7 +8,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -54,10 +53,8 @@ public class ConversionController {
     }
 
     @PostMapping("/{id}/cancel")
-    public ResponseEntity<?> cancelConversion(Authentication authentication,
-                                              @PathVariable String id) {
+    public ResponseEntity<?> cancelConversion(Authentication authentication, @PathVariable String id) {
         String userId = authentication.getName();
-
         try {
             ConversionDto cancelledConversion = conversionService.cancelConversion(id, userId);
             return ResponseEntity.ok(Map.of(
@@ -71,22 +68,16 @@ public class ConversionController {
         }
     }
 
-    @GetMapping
-    public ResponseEntity<List<ConversionDto>> getConversions(Authentication authentication) {
-        String userId = authentication.getName();
-        return ResponseEntity.ok(conversionService.getUserConversions(userId));
-    }
-
     @GetMapping("/{id}")
-    public ResponseEntity<ConversionDto> getConversion(Authentication authentication, @PathVariable String id) {
-        String userId = authentication.getName();
-        ConversionDto conversion = conversionService.getConversion(id);
+    public ResponseEntity<ConversionDto> getConversion(
+            @PathVariable String conversionId,
+            @RequestParam String userId) {
 
-        if (!conversion.getUserId().equals(userId)) {
-            return ResponseEntity.status(403).build();
-        }
-        return ResponseEntity.ok(conversion);
+        ConversionDto dto = conversionService.getConversionById(conversionId, userId);
+        return ResponseEntity.ok(dto);
     }
+
+
 
 
 }

@@ -46,6 +46,7 @@ public class Conversion {
     private String transactionId;
 
     @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
     private ConversionStatus status;
 
     private String referenceId;
