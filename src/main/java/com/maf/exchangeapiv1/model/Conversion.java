@@ -21,6 +21,9 @@ public class Conversion {
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    @Column(unique = true)
+    private String idempotencyKey;
+
     @Column(nullable = false)
     private String userId;
 

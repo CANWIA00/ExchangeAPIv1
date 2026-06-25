@@ -20,9 +20,10 @@ public class ConversionController {
     @PostMapping
     public ResponseEntity<ConversionDto> createConversionOffer(Authentication authentication, @RequestParam String fromAsset,
                                                                @RequestParam String toAsset, @RequestParam BigDecimal amount,
-                                                               @RequestParam(required = false) String description,
-                                                               @RequestParam(required = false) String side,
-                                                               @RequestParam(required = false) String conversionType) {
+                                                               @RequestParam String description,
+                                                               @RequestParam String side,
+                                                               @RequestParam String conversionType,
+                                                               @RequestParam String idempotencyId) {
         String userId = authentication.getName();
         ConversionDto conversion = conversionService.createConversionOffer(
                 userId,
@@ -31,7 +32,8 @@ public class ConversionController {
                 amount,
                 description,
                 side,
-                conversionType
+                conversionType,
+                idempotencyId
         );
         return ResponseEntity.ok(conversion);
     }

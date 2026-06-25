@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -44,7 +45,18 @@ public class ConversionService {
     // ==================== OFFER OPERATIONS ====================
 
     @Transactional
-    public ConversionDto createConversionOffer(String userId, String fromAsset, String toAsset, BigDecimal amount, String description, String side, String conversionType) {
+    public ConversionDto createConversionOffer(String userId, String fromAsset, String toAsset, BigDecimal amount, String description, String side, String conversionType, String idempotencyKey) {
+
+        if (idempotencyKey == null || idempotencyKey.isEmpty()) {
+            throw new RuntimeException("Idempotency key is required!");
+        }
+
+        Optional<Conversion> existing = conversionRepository.findByIdempotencyKey(idempotencyKey);
+        if (existing.isPresent()) {
+            log.info("[IDEMPOTENCY] Duplicate request for key: {}", idempotencyKey);
+            return conversionConverter.toDTO(existing.get());
+        }
+
         String pair = toAsset + "-" + fromAsset;
         FinalPriceDto price;
         if ("BASE".equalsIgnoreCase(conversionType)) {
@@ -63,6 +75,7 @@ public class ConversionService {
         BigDecimal slippageFee = price.getSlippageAmount();
         BigDecimal totalFees = price.getTotalFees();
         Conversion conversion = Conversion.builder()
+                .idempotencyKey(idempotencyKey)
                 .userId(userId)
                 .fromAsset(fromAsset)
                 .toAsset(toAsset)

@@ -8,19 +8,13 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+
 @Repository
 public interface ConversionRepository extends JpaRepository<Conversion, String> {
 
-
-    List<Conversion> findByUserIdOrderByCreatedAtDesc(String userId);
-
-    List<Conversion> findByUserIdAndStatus(String userId, ConversionStatus status);
-
     List<Conversion> findByStatus(ConversionStatus status);
 
-    List<Conversion> findByUserIdAndFromAsset(String userId, String fromAsset);
+    Optional<Conversion> findByIdempotencyKey(String idempotencyKey);
 
-    List<Conversion> findByUserIdAndToAsset(String userId, String toAsset);
-
-    Optional<Conversion> findByTransactionId(String transactionId);
+    boolean existsByIdempotencyKey(String idempotencyKey);
 }
