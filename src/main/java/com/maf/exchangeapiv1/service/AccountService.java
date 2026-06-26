@@ -6,6 +6,7 @@ import com.maf.exchangeapiv1.model.Account;
 import com.maf.exchangeapiv1.model.User;
 import com.maf.exchangeapiv1.repository.AccountRepository;
 import com.maf.exchangeapiv1.repository.UserRepository;
+import com.maf.exchangeapiv1.thirdPartAPIGateWay.BinanceService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,7 @@ public class AccountService {
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
     private final AccountConverter accountConverter;
+    private final BinanceService binanceService;
     private final String COMPANY_USER_ID = "company-user-id";
     private final String COINBASE_USER_ID = "coinbase-system-id";
 
@@ -108,12 +110,6 @@ public class AccountService {
                 .orElseThrow(() -> new RuntimeException(asset + " account not found for user " + userId));
     }
 
-    public Account updateAccount(Account account) {
-        log.info("[ACCOUNT] Updating account: {} - {}, Balance: {}",
-                account.getUser().getId(), account.getAsset(), account.getBalance());
-        return accountRepository.save(account);
-    }
-
     @Transactional
     public Account debitAccount(String userId, String asset, BigDecimal amount) {
         Account account = getAccountById(userId, asset);
@@ -133,8 +129,9 @@ public class AccountService {
         return accountRepository.save(account);
     }
 
-
-    /// /////////////////////////////////////////////////////
+    public List<AccountDto> getThirdPartAccountList(String UserId) {
+        return binanceService.getAccountList(UserId);
+    }
 
 
 

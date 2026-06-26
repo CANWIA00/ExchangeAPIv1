@@ -23,6 +23,13 @@ public class AccountController {
         return ResponseEntity.ok(accountService.getUserAccounts(userId));
     }
 
+    @GetMapping("/wallets/thirdPart")
+    public ResponseEntity<List<AccountDto>> getBinanceAccounts(Authentication authentication) {
+        String userId = authentication.getName();
+        List<AccountDto> accounts = accountService.getThirdPartAccountList(userId);
+        return ResponseEntity.ok(accounts);
+    }
+
 
     @GetMapping("/wallet/{asset}")
     public ResponseEntity<AccountDto> getAccount(Authentication authentication, @PathVariable String asset) {
