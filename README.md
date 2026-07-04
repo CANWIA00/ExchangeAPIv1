@@ -42,21 +42,12 @@ The architecture follows common Spring Boot design principles by separating resp
 
 # 🏛️ Project Architecture
 
-The project follows a layered architecture to ensure maintainability and scalability.
+The project follows a layered architecture to ensure maintainability and scalability
 
-```
-                Client
-                   │
-            REST Controllers
-                   │
-              Service Layer
-                   │
-      Repository / External APIs
-          │                  │
-      PostgreSQL         Coinbase API
-                   │
-                Redis Cache
-```
+<p align="center">
+    <img src="System ARC.png" alt="Project Architecture" width="900"/>
+</p>
+
 
 ---
 
